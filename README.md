@@ -4,6 +4,7 @@ This repository (turner2025WRR) supports the hydrodynamic modeling study describ
 This repository includes all scripts used for downloading and plotting model inputs, calibration (2011) and validation (2014) analysis, codes to download and produce figures for meteorological, tributary, sea boundary, and diversion inputs for hydrodynamic scenario simulations. The Lagrangian particle tracking model, dorado (Hariharan, 2020), was used to calculate spatial exposure time metrics. dorado was then applied to create maps of the spatial heterogeneity of exposure time for both system-wide and localized metrics. Model descriptions, scenario definitions, model evaluation results, and analytical methods are fully described in the associated publication.
 
 
+
 Water exposure time distributions controlled by freshwater releases in a semi-enclosed estuary
 Caitlin Turner, Matthew Hiatt
 
@@ -11,6 +12,7 @@ Freshwater diversions manage water shortages, salinity, and control floodwater b
 
 
 References:
+
 Hariharan, J., Wright, K., & Passalacqua, P. (2020). dorado: A Python package for simulating passive particle transport in shallow-water flows. Journal of Open Source Software, 5 (54), 2585. doi: 10.21105/joss.02585
 
 Turner, C., M. Hiatt (2025). Water exposure time distributions controlled by freshwater releases in a semi-enclosed estuary published in Water Resources Research WRR 2025 data, HydroShare, http://www.hydroshare.org/10.4211/hs.f1c83ff830bb47c5a7c84e6f5217ea5c
