@@ -165,13 +165,15 @@ for i in range(timesteps):
 
     particle = pt.Particles(params)
     if i == 0:
-        particle.generate_particles(particles, seed_xloc, seed_yloc, seed_time=0, method='exact')
+        particle.generate_particles(particles, seed_xloc, seed_yloc, method='exact')
     else:
-        particle.generate_particles(0, xi, yi, seed_time=float(ti[0]), method='random', previous_walk_data=walk_data)
+        particle.generate_particles(0, xi, yi, seed_time=float(target_times[i]), method='exact', previous_walk_data=walk_data)
 
-    walk_data = particle.run_iteration(target_times[i])
-    x0, y0, t0 = dorado.routines.get_state(walk_data, 0)
+    walk_data = particle.run_iteration(target_time = target_times[i])
     xi, yi, ti = dorado.routines.get_state(walk_data)
+
+    if i == 0:
+        x0, y0, t0 = dorado.routines.get_state(walk_data, 0) 
 
     fig, ax = plt.subplots(figsize=(10, 6), dpi=200)
     ax.scatter(yi, xi, c='firebrick', s=0.75)
