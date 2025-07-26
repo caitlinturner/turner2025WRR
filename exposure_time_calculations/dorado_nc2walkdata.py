@@ -110,18 +110,6 @@ num_seeds = int(len(seed_locations) * 0.05)
 selected_seed_locations = seed_locations[:num_seeds]
 seed_xloc, seed_yloc = zip(*selected_seed_locations)
 
-
-# Set Dorado parameters that remain static
-params = pt.modelParams()
-params.theta = 1.0
-params.gamma = 0.05
-params.diff_coeff = 0.8
-params.cell_type = np.where(np.isnan(elevation), 2, celltype_initial)
-params.dx = resolution
-params.dry_depth = 0.01
-target_times = np.arange(0, model_timestep * (timesteps + 1), model_timestep)
-
-
 # Paritcle Initial Locations with new indicies
 fig, ax = plt.subplots(figsize=(10, 5), dpi=400)
 cax = ax.imshow(elevation, cmap=cmocean.cm.deep_r, vmin=-25, vmax=0)
@@ -136,26 +124,36 @@ cbar.set_ticklabels(['0', '5', '10','15', '20','25'])
 ax.set_facecolor('whitesmoke')
 plt.show()
 
+# Set Dorado parameters that remain static
+walk_data = {}
+particles = 5000
+model_timestep = 3600  # seconds (1 hour)
+timesteps = (len(unstructured['time'])-1)
 
+params = pt.modelParams()
+params.theta = 1.0
+params.gamma = 0.05
+params.diff_coeff = 0.8
+params.cell_type = np.where(np.isnan(elevation), 2, celltype_initial)
+params.dx = 100
+params.dry_depth = 0.01
+target_times = np.arange(0, model_timestep * (timesteps + 1), model_timestep)
+target_times = [int(t) for t in target_times]
+params.verbose = True
+prev_counts = None # Initialize for particle timing
 
-
-## Run Dorado for Walk Data ## -----------------------------------------------
 for i in range(timesteps):
- 
     # Rasterize all data
-    stage = myInterp(map_xr['mesh2d_s1'].isel(time=startRange + i * hydrodt).values.astype(np.float32))
-    depth = myInterp(map_xr['mesh2d_waterdepth'].isel(time=startRange + i * hydrodt).values.astype(np.float32))
-    u = myInterp(map_xr['mesh2d_ucx'].isel(time=startRange + i * hydrodt).values.astype(np.float32))
-    v = myInterp(map_xr['mesh2d_ucy'].isel(time=startRange + i * hydrodt).values.astype(np.float32))
+    stage = myInterp(unstructured['timesteps'][i][0])
+    depth = myInterp(unstructured['timesteps'][i][1])
+    u = myInterp(unstructured['timesteps'][i][2])
+    v = myInterp(unstructured['timesteps'][i][3])
 
-    # Fix Cut in Data
-    for arr in [stage, depth, u, v]:
-        arr[interpolate_indices[0]:interpolate_indices[1], interpolate_indices[2]:interpolate_indices[3]] = pd.DataFrame(arr[interpolate_indices[0]:interpolate_indices[1], interpolate_indices[2]:interpolate_indices[3]]).interpolate().values
-        
     for arr in [u, v]:
-        arr[ocean_boundary[0]:ocean_boundary[1], ocean_boundary[2]:ocean_boundary[3]] = 0
-    
-    # Set Dorado parameters that get updated
+        arr[ocean_boundary_r[0]:ocean_boundary_r[1], ocean_boundary_r[2]:ocean_boundary_r[3]] = 0
+        arr[ocean_boundary_cm[0]:ocean_boundary_cm[1], ocean_boundary_cm[2]:ocean_boundary_cm[3]] = 0
+        
+    # Set Dorado parameters
     params.topography = elevation
     params.stage = stage
     params.qx = u * depth
@@ -163,21 +161,50 @@ for i in range(timesteps):
     params.u = u
     params.y = v
 
+    # Generate particles
     particle = pt.Particles(params)
     if i == 0:
-        particle.generate_particles(particles, seed_xloc, seed_yloc, method='exact')
+        particle.generate_particles(particles, seed_xloc, seed_yloc, seed_time=0, method='exact')
     else:
-        particle.generate_particles(0, xi, yi, seed_time=float(target_times[i]), method='exact', previous_walk_data=walk_data)
+        particle.generate_particles(0, xi, yi, seed_time=0, method='exact', previous_walk_data=walk_data)
 
-    walk_data = particle.run_iteration(target_time = target_times[i])
+    # Run iteration
+    walk_data = particle.run_iteration(target_times[i])
     xi, yi, ti = dorado.routines.get_state(walk_data)
 
-    if i == 0:
-        x0, y0, t0 = dorado.routines.get_state(walk_data, 0) 
+    ## Account for travel_times of particles
+    x_key = 'xinds' if 'xinds' in walk_data else 'x_inds'
+    t_key = 'travel_times'
+    x_lists = walk_data[x_key]
+    t_lists = walk_data.get(t_key, [[] for _ in x_lists])
+    walk_data[t_key] = t_lists
+    
+    if prev_counts is None or len(prev_counts) != len(x_lists):
+        prev_counts = [0] * len(x_lists)
+    t_start = target_times[i - 1] if i > 0 else 0
+    t_end   = target_times[i]
+    for p, x_list in enumerate(x_lists):
+        cur_len = len(x_list)
+        added = cur_len - prev_counts[p]
+        if added <= 0:
+            continue
+    
+        # Determine starting time (last known time if any) and build travel_times list
+        last_time = t_lists[p][prev_counts[p]-1] if prev_counts[p] > 0 else t_start
+        seg = np.linspace(last_time, t_end, added + 1, endpoint=True)[1:]
+        seg = [int(s) if s.is_integer() else float(s) for s in seg]
+     
+        # Increase travel_times array if multiple iterations are needed
+        if len(t_lists[p]) < cur_len:
+            t_lists[p].extend([None] * (cur_len - len(t_lists[p])))
+        t_lists[p][prev_counts[p]:cur_len] = seg
+        prev_counts[p] = cur_len
 
-    fig, ax = plt.subplots(figsize=(10, 6), dpi=200)
-    ax.scatter(yi, xi, c='firebrick', s=0.75)
-    im = ax.imshow(particle.depth * -1, cmap=cmocean.cm.deep_r, vmin = 0, vmax = -25)
+
+    # Plotting
+    fig, ax = plt.subplots(figsize=(10, 5), dpi=200)
+    ax.scatter(yi, xi, c='firebrick', s=1)
+    im = ax.imshow(particle.depth * -1, vmin=0, vmax=-25)
     plt.title(f'Time: {int((target_times[i] / 3600) // 24)} Days, {int((target_times[i] / 3600) % 24)} Hours')
     cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
     cbar.set_label('Depth (m)')
@@ -187,6 +214,7 @@ for i in range(timesteps):
     im.axes.yaxis.set_ticklabels([])
     im.axes.get_xaxis().set_ticks([])
     im.axes.get_yaxis().set_ticks([])
+    ax.set_facecolor('whitesmoke')
     plt.savefig(f'{path2folder}/output_by_dt{i}.png')
     plt.close()
 
