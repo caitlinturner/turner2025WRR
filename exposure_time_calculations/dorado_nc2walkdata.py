@@ -179,6 +179,24 @@ for i in range(timesteps):
     t_lists = walk_data.get(t_key, [[] for _ in x_lists])
     walk_data[t_key] = t_lists
     
+    # Generate particles
+    particle = pt.Particles(params)
+    if i == 0:
+        particle.generate_particles(particles, seed_xloc, seed_yloc, method='exact')
+    else:
+        particle.generate_particles(0, [], [], previous_walk_data=walk_data)
+
+    # Run iteration
+    walk_data = particle.run_iteration(target_times[i])
+    xi, yi, ti = dorado.routines.get_state(walk_data)
+
+    x_key = 'xinds' if 'xinds' in walk_data else 'x_inds'
+    t_key = 'travel_times'
+    x_lists = walk_data[x_key]
+    t_lists = walk_data.get(t_key, [[] for _ in x_lists])
+    walk_data[t_key] = t_lists
+
+ # Addition for Unsteady Data
     if prev_counts is None or len(prev_counts) != len(x_lists):
         prev_counts = [0] * len(x_lists)
     t_start = target_times[i - 1] if i > 0 else 0
@@ -188,13 +206,11 @@ for i in range(timesteps):
         added = cur_len - prev_counts[p]
         if added <= 0:
             continue
-    
-        # Determine starting time (last known time if any) and build travel_times list
         last_time = t_lists[p][prev_counts[p]-1] if prev_counts[p] > 0 else t_start
         seg = np.linspace(last_time, t_end, added + 1, endpoint=True)[1:]
         seg = [int(s) if s.is_integer() else float(s) for s in seg]
-     
-        # Increase travel_times array if multiple iterations are needed
+    
+        # Grow and fill travel_times if multiple iterations are needed
         if len(t_lists[p]) < cur_len:
             t_lists[p].extend([None] * (cur_len - len(t_lists[p])))
         t_lists[p][prev_counts[p]:cur_len] = seg
@@ -220,7 +236,7 @@ for i in range(timesteps):
 
 ## Exposure Time Calculation ## ----------------------------------------------
 exposure_times = pt.exposure_time(walk_data, regions)
-exposure_times_plot = dorado.routines.plot_exposure_time(walk_data, exposure_times, f'{scenario_name}/figs', timedelta=86400, nbins=20)
+exposure_times_plot = dorado.routines.plot_exposure_time(walk_data, exposure_times, f'{scenario_name}/figs', timedelta=86400, nbins=20, unsteady = True)
 
 
 ## Save Results ## ----------------------------------------------------------
@@ -241,6 +257,7 @@ print(f"Time Taken: {int(hrs)} hours, {round(mins)} minutes")
 # from dorado.routines import animate_plots
 
 # animate_plots(0, 1536, f'exposure_time_calculations/Final_Versions/{Scenario_Name}')
+
 
 
 
